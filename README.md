@@ -30,7 +30,7 @@ An advanced online exam platform with built-in AI proctoring features. This tool
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/abhishek-sharma-8412/AIProctor2.0
+   git clone https://github.com/Snehit2618/AIProctor.git
    cd ai-exam-proctoring-tool
    ```
 
@@ -125,7 +125,7 @@ MIT License
 
 ## Credits
 
-Developed by [Abhishek Sharma]  
+Developed by [Snehit Janapure]  
 Powered by React, Node.js, and Supabase
 
 ---
