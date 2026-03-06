@@ -16,9 +16,10 @@ app.use(cors({
 
 // Supabase setup
 const supabase = createClient(
-  'https://iixmojvmoakkwfiymcnv.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpeG1vanZtb2Fra3dmaXltY252Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NzgyMjY3MSwiZXhwIjoyMDYzMzk4NjcxfQ.iRjpSjK0G3hB460cz4kcaV7vXX5bPe1-plx2kTis8Js'
+  'https://xsajyowogczrntzqlnxk.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzYWp5b3dvZ2N6cm50enFsbnhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMDM1NzksImV4cCI6MjA4MDU3OTU3OX0.pprYujlUPSvF2e9uWXkdUk4vscIo4ulE5SyZEc9aW6g'
 );
+
 
 // Session setup
 app.use(session({
