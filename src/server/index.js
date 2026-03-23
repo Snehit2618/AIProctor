@@ -4,6 +4,13 @@ import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
+import axios from 'axios';
+import multer from 'multer';
+import FormData from 'form-data';
+import fs from 'fs';
+import { promises as fsPromises } from 'fs';
+import os from 'os';
+import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -34,6 +41,10 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+const uploadDir = path.join(os.tmpdir(), 'aiproctor-uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({ dest: uploadDir });
 
 // Passport strategies
 passport.use('student', new LocalStrategy({
@@ -441,6 +452,61 @@ app.get('/api/exams', async (req, res) => {
     res.status(500).json({ error: 'Error fetching exams' });
   }
 });
+
+// Resume analysis proxy endpoint (Node -> FastAPI)
+app.post(
+  '/api/resume/analyze',
+  upload.fields([
+    { name: 'resume', maxCount: 1 },
+    { name: 'jd', maxCount: 1 }
+  ]),
+  async (req, res) => {
+    const resumeFile = req.files?.resume?.[0];
+    const jdFile = req.files?.jd?.[0];
+
+    try {
+      if (!resumeFile || !jdFile) {
+        return res.status(400).json({ error: 'Both resume and jd PDF files are required' });
+      }
+
+      const form = new FormData();
+      form.append('resume', fs.createReadStream(resumeFile.path), {
+        filename: resumeFile.originalname || 'resume.pdf',
+        contentType: resumeFile.mimetype || 'application/pdf'
+      });
+      form.append('jd', fs.createReadStream(jdFile.path), {
+        filename: jdFile.originalname || 'jd.pdf',
+        contentType: jdFile.mimetype || 'application/pdf'
+      });
+
+      const response = await axios.post('http://localhost:8000/analyze-resume', form, {
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity
+      });
+
+      return res.status(response.status).json(response.data);
+    } catch (error) {
+      if (error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      console.error('Error proxying resume analysis request:', error.message);
+      return res.status(500).json({ error: 'Failed to analyze resume' });
+    } finally {
+      const cleanupTargets = [resumeFile?.path, jdFile?.path].filter(Boolean);
+      await Promise.all(
+        cleanupTargets.map(async (filePath) => {
+          try {
+            await fsPromises.unlink(filePath);
+          } catch (cleanupError) {
+            if (cleanupError.code !== 'ENOENT') {
+              console.error(`Failed to clean up uploaded file: ${filePath}`, cleanupError.message);
+            }
+          }
+        })
+      );
+    }
+  }
+);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

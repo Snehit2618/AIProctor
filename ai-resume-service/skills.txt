@@ -1,0 +1,27 @@
+python
+java
+javascript
+react
+node
+express
+django
+flask
+sql
+postgresql
+mongodb
+docker
+kubernetes
+aws
+azure
+git
+linux
+machine learning
+data science
+tensorflow
+pytorch
+pandas
+numpy
+scikit-learn
+html
+css
+typescript
