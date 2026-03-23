@@ -1,4 +1,6 @@
+from dotenv import load_dotenv
 import os
+
 import re
 import PyPDF2
 import spacy
@@ -8,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+load_dotenv()
 # Load resources once at startup
 nlp = spacy.load("en_core_web_sm")
 model = joblib.load("utils/model.pkl")
