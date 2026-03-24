@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { FiCamera, FiMonitor, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
-import { useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 import Header from '../common/Header';
 import Card from '../common/Card';
@@ -123,6 +123,15 @@ const ExamInterface = () => {
   const [score, setScore] = useState(null);
   const location = useLocation();
   const { exam: examData, sessionId } = location.state || {};
+  const screeningPassed = sessionStorage.getItem('screeningPassed');
+
+  if (!screeningPassed) {
+    return <Navigate to="/resume-screening" replace />;
+  }
+
+  if (!examData || !sessionId) {
+    return <Navigate to="/resume-screening" replace />;
+  }
 
   const { 
     isFullScreen, 

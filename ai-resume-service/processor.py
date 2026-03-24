@@ -17,6 +17,7 @@ nlp = spacy.load("en_core_web_sm")
 model = joblib.load("utils/model.pkl")
 vectorizer = joblib.load("utils/vectorizer.pkl")
 semantic_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+SHORTLIST_THRESHOLD = 60
 
 # API key for YouTube Data API
 api_key = "AIzaSyASNQF4YtN1KkyB7XIzp4ljtgRCk_xMhIw"
@@ -127,7 +128,7 @@ def process_resume(resume_path, jd_text, skills_set):
         "missing_skills": list(missing_skills),   # Convert to list for JSON serialization
         "feedback": feedback,
         "video_recommendations": video_recommendations,
-        "status": "Shortlisted ✅" if final_score >= 70 else "Not Shortlisted ❌"
+        "status": "Shortlisted ✅" if final_score >= SHORTLIST_THRESHOLD else "Not Shortlisted ❌"
     }
 
     return result
