@@ -5,6 +5,7 @@ import StudentSignIn from './pages/StudentSignIn';
 import AdminLogin from './pages/AdminLogin';
 import AdminSignIn from './pages/AdminSignIn';
 import LandingPage from './pages/LandingPage';
+import ResumeScreening from './pages/ResumeScreening';
 import GlobalStyles from './styles/GlobalStyles';
 import ExamInterface from './components/exam/ExamInterface';
 import ProctorDashboard from './components/dashboard/ProctorDashboard';
@@ -18,6 +19,14 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/student-login" element={<StudentLogin />} />
         <Route path="/student-signin" element={<StudentSignIn />} />
+        <Route
+          path="/resume-screening"
+          element={
+            <ProtectedRoute role="student">
+              <ResumeScreening />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/admin-signin" element={<AdminSignIn />} />
         <Route

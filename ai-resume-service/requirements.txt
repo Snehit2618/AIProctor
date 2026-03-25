@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+PyPDF2
+python-docx
+scikit-learn
+spacy
+joblib
+cohere
+google-api-python-client
+google-generativeai
+google-auth-oauthlib
+google-auth-httplib2
+python-multipart
+sentence-transformers
