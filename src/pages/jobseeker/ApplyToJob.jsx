@@ -262,8 +262,7 @@ const ErrorMessage = styled.div`
 `;
 
 const SuccessMessage = styled.div`
-  background: var(--success-light);
-  color: var(--success);
+  ${props => props.$passed === false ? `background: var(--danger-light); color: var(--danger);` : `background: var(--success-light); color: var(--success);`}
   padding: 1.5rem;
   border-radius: 0.75rem;
   margin-bottom: 1.5rem;
@@ -300,6 +299,7 @@ const ApplyToJob = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [applicationResult, setApplicationResult] = useState(null);
 
   useEffect(() => {
     fetchJob();
@@ -366,8 +366,9 @@ const ApplyToJob = () => {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        setApplicationResult(data);
         setIsSuccess(true);
-        setTimeout(() => navigate('/my-applications'), 3000);
+        setTimeout(() => navigate('/my-applications'), 5000);
       } else {
         setError(data.error || 'Error submitting application');
       }
@@ -390,13 +391,41 @@ const ApplyToJob = () => {
   }
 
   if (isSuccess) {
+    const passed = applicationResult?.passed_threshold;
     return (
       <PageContainer>
         <NavBar user={user} role="jobseeker" />
         <Content>
-          <SuccessMessage>
-            <SuccessTitle><FiCheck size={24} /> Application Submitted!</SuccessTitle>
-            <SuccessText>Your resume is being screened. We'll notify you once the review is complete.</SuccessText>
+          <SuccessMessage $passed={passed}>
+            <SuccessTitle>
+              {passed === true ? <FiCheck size={24} /> : passed === false ? <FiAlertCircle size={24} /> : <FiCheck size={24} />}
+              Application {passed === false ? 'Under Review' : 'Submitted!'}
+            </SuccessTitle>
+            {applicationResult?.resume_score !== null && applicationResult?.resume_score !== undefined && (
+              <div style={{ marginTop: '0.75rem', fontSize: '1.1rem', fontWeight: 700 }}>
+                Resume Match: {applicationResult.resume_score}%
+                {applicationResult.passed_threshold !== null && (
+                  <span> (Threshold: {job?.passing_threshold}%)</span>
+                )}
+              </div>
+            )}
+            {applicationResult?.matching_skills?.length > 0 && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+                <strong>Matching Skills:</strong> {applicationResult.matching_skills.join(', ')}
+              </div>
+            )}
+            {applicationResult?.missing_skills?.length > 0 && (
+              <div style={{ marginTop: '0.25rem', fontSize: '0.85rem' }}>
+                <strong>Skills to Improve:</strong> {applicationResult.missing_skills.join(', ')}
+              </div>
+            )}
+            <SuccessText style={{ marginTop: '0.75rem' }}>
+              {passed === false
+                ? 'Your resume score was below the threshold. Check your skills to improve.'
+                : passed === true
+                ? 'Congratulations! Your resume matched the job requirements. You may proceed to the exam.'
+                : 'Your application is under review. We\'ll notify you soon.'}
+            </SuccessText>
           </SuccessMessage>
         </Content>
       </PageContainer>

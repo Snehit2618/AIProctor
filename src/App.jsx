@@ -21,6 +21,7 @@ import ResumeScreening from './pages/ResumeScreening';
 
 // Employer pages
 import EmployerDashboard from './pages/employer/EmployerDashboard';
+import EmployerCandidates from './pages/employer/EmployerCandidates';
 import CreateJob from './pages/employer/CreateJob';
 import JobCandidates from './pages/employer/JobCandidates';
 import ExamBuilder from './pages/employer/ExamBuilder';
@@ -135,6 +136,14 @@ function App() {
           element={
             <ProtectedRoute role="employer">
               <JobCandidates />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employer/candidates"
+          element={
+            <ProtectedRoute role="employer">
+              <EmployerCandidates />
             </ProtectedRoute>
           }
         />

@@ -195,7 +195,8 @@ const NavBar = ({ user, role = 'jobseeker' }) => {
       case 'employer':
         return [
           { label: 'Dashboard', path: '/employer/dashboard' },
-          { label: 'My Jobs', path: '/employer/jobs' },
+          { label: 'Create Job', path: '/employer/jobs/new' },
+          { label: 'Create Exam', path: '/employer/exams/new' },
           { label: 'Candidates', path: '/employer/candidates' },
         ];
       default:
