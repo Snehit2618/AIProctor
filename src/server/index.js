@@ -58,7 +58,7 @@ app.use(passport.session());
 
 const uploadDir = path.join(os.tmpdir(), 'aiproctor-uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
-const upload = multer({ dest: uploadDir });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Passport strategies
 passport.use('student', new LocalStrategy({
@@ -537,7 +537,7 @@ app.post('/api/jobs/:id/apply', upload.single('resume'), async (req, res) => {
     // Check if job exists
     const { data: job, error: jobError } = await supabase
       .from('jobs')
-      .select('id')
+      .select('id, title, jd_text, jd_keywords, passing_threshold, exam_code')
       .eq('id', jobId)
       .single();
 
@@ -557,16 +557,70 @@ app.post('/api/jobs/:id/apply', upload.single('resume'), async (req, res) => {
       return res.status(400).json({ error: 'You have already applied to this job' });
     }
 
-    // Process resume file if uploaded
-    let resumeText = '';
+    // Upload resume to Supabase storage
+    let resumeUrl = null;
+    let resumeScore = null;
+    let matchingSkills = [];
+    let missingSkills = [];
+
     if (req.file) {
       try {
-        const fileContent = await fsPromises.readFile(req.file.path, 'utf-8');
-        resumeText = fileContent;
-        await fsPromises.unlink(req.file.path);
+        const fileBuffer = req.file.buffer;
+        const fileName = `${req.user.id}/${Date.now()}_${req.file.originalname}`;
+
+        console.log('Uploading resume to bucket "resume" as:', fileName);
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('resume')
+          .upload(fileName, fileBuffer, {
+            contentType: req.file.mimetype,
+            upsert: true
+          });
+
+        console.log('Upload result:', JSON.stringify({ data: uploadData, error: uploadError }));
+
+        if (uploadError) {
+          console.error('Resume upload error:', JSON.stringify(uploadError));
+        } else {
+          const { data: urlData } = supabase.storage
+            .from('resume')
+            .getPublicUrl(fileName);
+          resumeUrl = urlData.publicUrl;
+          console.log('Resume URL:', resumeUrl);
+        }
+
+        // Analyze resume with AI service (use /analyze-resume-text endpoint with JD as text)
+        if (job.jd_text || job.jd_keywords) {
+          const formData = new FormData();
+          formData.append('resume', fileBuffer, req.file.originalname);
+          formData.append('jd_text', job.jd_text || job.jd_keywords || '');
+
+          try {
+            const aiResponse = await axios.post('http://localhost:8000/analyze-resume-text', formData, {
+              headers: formData.getHeaders(),
+              maxBodyLength: Infinity,
+              timeout: 30000
+            });
+
+            if (aiResponse.status === 200) {
+              const aiData = aiResponse.data;
+              resumeScore = aiData.match_percentage || aiData.match_score || 0;
+              matchingSkills = aiData.matching_skills || [];
+              missingSkills = aiData.missing_skills || [];
+            }
+          } catch (aiError) {
+            console.error('AI resume screening error:', aiError.message);
+          }
+        }
       } catch (e) {
-        console.error('Error reading resume file:', e);
+        console.error('Error processing resume:', e);
       }
+    }
+
+    // Determine status based on score vs threshold
+    let status = 'screening';
+    if (resumeScore !== null && job.passing_threshold) {
+      status = resumeScore >= job.passing_threshold ? 'screening' : 'rejected';
     }
 
     const { data: application, error } = await supabase
@@ -575,15 +629,29 @@ app.post('/api/jobs/:id/apply', upload.single('resume'), async (req, res) => {
         job_id: jobId,
         student_id: req.user.id,
         cover_letter: cover_letter || '',
-        resume_text: resumeText,
-        status: 'screening'
+        resume_url: resumeUrl,
+        resume_score: resumeScore,
+        status,
+        resume_match_details: {
+          matching_skills: matchingSkills,
+          missing_skills: missingSkills
+        }
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    res.status(201).json({ success: true, application });
+    res.status(201).json({
+      success: true,
+      application,
+      resume_score: resumeScore,
+      matching_skills: matchingSkills,
+      missing_skills: missingSkills,
+      passed_threshold: resumeScore !== null && job.passing_threshold
+        ? resumeScore >= job.passing_threshold
+        : null
+    });
   } catch (error) {
     console.error('Error applying to job:', error);
     res.status(500).json({ error: 'Error applying to job' });
@@ -1489,34 +1557,35 @@ app.get('/api/my-applications', async (req, res) => {
   }
 });
 
-// Get dashboard stats for admin
+// Get dashboard stats for admin/employer
 app.get('/api/admin/dashboard-stats', async (req, res) => {
   try {
-    if (!req.isAuthenticated()) {
+    if (!req.isAuthenticated() || (req.user.role !== 'admin' && req.user.role !== 'employer')) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const adminId = req.user.id;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Get all jobs for this admin
+    // Get all jobs for this admin/employer
     const { data: jobs } = await supabase
       .from('jobs')
       .select('id')
-      .eq('admin_id', adminId);
+      .eq('admin_id', userId);
 
     const jobIds = jobs ? jobs.map(j => j.id) : [];
 
-    // Get exams for this admin
+    // Get exams for this admin/employer
     const { data: exams } = await supabase
       .from('exams')
       .select('id, status, title')
-      .eq('admin_id', adminId)
+      .eq('admin_id', userId)
       .order('created_at', { ascending: false })
       .limit(10);
 
     const examIds = exams ? exams.map(e => e.id) : [];
 
-    // Get all applications for admin's jobs
+    // Get all applications for user's jobs
     const { data: applications } = await supabase
       .from('applications')
       .select('id, status, test_score, resume_score, student_id')
