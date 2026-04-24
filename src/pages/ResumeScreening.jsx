@@ -116,6 +116,39 @@ export default function ResumeScreening() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Get exam data from sessionStorage first, then fall back to location state
+  const getExamData = () => {
+    const storedExam = sessionStorage.getItem('examData');
+    const storedSessionId = sessionStorage.getItem('sessionId');
+
+    const fromState = location.state?.exam;
+    const sessionIdFromState = location.state?.sessionId;
+
+    return {
+      exam: fromState || (storedExam ? JSON.parse(storedExam) : null),
+      sessionId: sessionIdFromState || storedSessionId
+    };
+  };
+
+  const { exam: examData, sessionId } = getExamData();
+
+  // Redirect if no exam data (user came directly without completing login)
+  if (!examData || !sessionId) {
+    return (
+      <Container>
+        <ScreeningCard>
+          <Title>Resume Screening</Title>
+          <InfoMessage>
+            Please complete the student login first to access exam screening.
+          </InfoMessage>
+          <Button onClick={() => navigate('/student-login')} style={{ marginTop: '1rem' }}>
+            Go to Login
+          </Button>
+        </ScreeningCard>
+      </Container>
+    );
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -132,7 +165,7 @@ export default function ResumeScreening() {
 
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/resume/analyze', {
+      const res = await fetch('http://localhost:5001/api/resume/analyze', {
         method: 'POST',
         body: formData
       });
@@ -147,10 +180,13 @@ export default function ResumeScreening() {
 
       if (score >= 60) {
         sessionStorage.setItem('screeningPassed', 'true');
+        // Use stored exam data for navigation
+        const storedExam = sessionStorage.getItem('examData');
+        const storedSessionId = sessionStorage.getItem('sessionId');
         navigate('/exam', {
           state: {
-            exam: location.state?.exam,
-            sessionId: location.state?.sessionId
+            exam: storedExam ? JSON.parse(storedExam) : examData,
+            sessionId: storedSessionId || sessionId
           }
         });
         return;

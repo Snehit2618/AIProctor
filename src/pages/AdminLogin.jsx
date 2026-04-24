@@ -120,7 +120,7 @@ export default function AdminLogin() {
     setIsLoading(true);
     
     try {
-      const res = await fetch('http://localhost:5000/api/login/admin', {
+      const res = await fetch('http://localhost:5001/api/login/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -128,7 +128,9 @@ export default function AdminLogin() {
       });
       
       if (res.ok) {
-        navigate('/proctor');
+        const data = await res.json();
+        sessionStorage.setItem('user', JSON.stringify(data.user));
+        navigate('/admin/dashboard');
       } else {
         const data = await res.json();
         setError(data.error || 'Invalid credentials');
