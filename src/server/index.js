@@ -1,3 +1,10 @@
+import { config as dotenvConfig } from 'dotenv';
+import { fileURLToPath } from 'url';
+import path from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenvConfig({ path: path.resolve(__dirname, '../../.env') });
+
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
@@ -10,9 +17,9 @@ import FormData from 'form-data';
 import fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import os from 'os';
-import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import { GoogleGenAI } from '@google/genai';
 
 const app = express();
 app.use(express.json());
@@ -40,6 +47,52 @@ const supabase = createClient(
   process.env.SUPABASE_URL || 'https://eewfdhzumbnadnkkmrjg.supabase.co',
   process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVld2ZkaHp1bWJuYWRua2ttcmpnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ0NjQxNiwiZXhwIjoyMDkwMDIyNDE2fQ.0HKEAPv98YerJJmaHTnnYjA3M83UJe2FbI0be5ppye4'
 );
+
+// Gemini setup (free-tier: gemini-2.5-flash)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  console.warn('[Gemini] GEMINI_API_KEY missing in .env — question generation will fail');
+}
+const genai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+const GEMINI_MODEL = 'gemini-2.5-flash';
+console.log('[Gemini] API Key loaded:', GEMINI_API_KEY ? GEMINI_API_KEY.slice(0, 10) + '...' : '(missing)');
+
+// Helper: extract first JSON object from a text blob
+function extractJSON(text) {
+  if (!text) return null;
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first === -1 || last === -1 || last <= first) return null;
+  try {
+    return JSON.parse(text.substring(first, last + 1));
+  } catch {
+    return null;
+  }
+}
+
+// Helper: simple keyword matching (no AI). Splits jd_keywords/jd_text into tokens
+// and returns { score%, matchingSkills[], missingSkills[] } based on resume text.
+function keywordMatch(resumeText, jdKeywords, jdText) {
+  const resume = (resumeText || '').toLowerCase();
+  let keywords = [];
+  if (jdKeywords && jdKeywords.trim()) {
+    keywords = jdKeywords.split(',').map(k => k.trim()).filter(Boolean);
+  } else if (jdText && jdText.trim()) {
+    // Fallback: extract candidate keywords from JD text (words 3+ chars, drop common words)
+    const stop = new Set(['the','and','for','with','you','are','our','not','but','any','all','can','has','this','that','from','will','your','have','they','their','who','what','when','where','why','how','use','using','must','should','able','work','team','role','job','company','candidate','experience','strong','good','great']);
+    const tokens = (jdText.toLowerCase().match(/[a-z][a-z0-9+#.-]{2,}/g) || []);
+    keywords = [...new Set(tokens.filter(t => !stop.has(t)))].slice(0, 20);
+  }
+  if (keywords.length === 0) return { score: 0, matchingSkills: [], missingSkills: [] };
+  const matchingSkills = [];
+  const missingSkills = [];
+  for (const kw of keywords) {
+    if (resume.includes(kw.toLowerCase())) matchingSkills.push(kw);
+    else missingSkills.push(kw);
+  }
+  const score = Math.round((matchingSkills.length / keywords.length) * 100);
+  return { score, matchingSkills, missingSkills };
+}
 
 
 // Session setup
@@ -354,8 +407,8 @@ app.get('/api/protected/student', (req, res) => {
 });
 
 app.get('/api/protected/admin', (req, res) => {
-  if (req.isAuthenticated() && req.user.role === 'admin') {
-    res.json({ allowed: true, user: req.user });
+  if (req.isAuthenticated() && (req.user.role === 'admin' || req.user.role === 'employer')) {
+    res.json({ allowed: true, user: { ...req.user, role: req.user.role } });
   } else {
     res.status(401).json({ allowed: false });
   }
@@ -532,12 +585,11 @@ app.post('/api/jobs/:id/apply', upload.single('resume'), async (req, res) => {
     }
 
     const { id: jobId } = req.params;
-    const { cover_letter } = req.body;
 
     // Check if job exists
     const { data: job, error: jobError } = await supabase
       .from('jobs')
-      .select('id, title, jd_text, jd_keywords, passing_threshold, exam_code')
+      .select('id, title, description, jd_text, jd_keywords, passing_threshold, exam_code')
       .eq('id', jobId)
       .single();
 
@@ -562,85 +614,137 @@ app.post('/api/jobs/:id/apply', upload.single('resume'), async (req, res) => {
     let resumeScore = null;
     let matchingSkills = [];
     let missingSkills = [];
+    let screeningError = null;
+    let resumeText = req.body.resume_text || null; // from PDF.js client-side extraction
+    const threshold = job.passing_threshold || 50;
+    const jdText = job.jd_text || job.jd_keywords || job.description || '';
 
     if (req.file) {
-      try {
-        const fileBuffer = req.file.buffer;
-        const fileName = `${req.user.id}/${Date.now()}_${req.file.originalname}`;
+      const fileBuffer = req.file.buffer;
+      const fileName = `${req.user.id}/${Date.now()}_${req.file.originalname}`;
 
-        console.log('Uploading resume to bucket "resume" as:', fileName);
+      console.log('[Apply] Uploading resume to bucket "resume" as:', fileName);
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
+        .from('resume')
+        .upload(fileName, fileBuffer, {
+          contentType: req.file.mimetype,
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('[Apply] Resume upload error:', JSON.stringify(uploadError));
+      } else {
+        const { data: urlData } = supabase.storage
           .from('resume')
-          .upload(fileName, fileBuffer, {
-            contentType: req.file.mimetype,
-            upsert: true
-          });
+          .getPublicUrl(fileName);
+        resumeUrl = urlData.publicUrl;
+        console.log('[Apply] Resume URL:', resumeUrl);
+      }
 
-        console.log('Upload result:', JSON.stringify({ data: uploadData, error: uploadError }));
-
-        if (uploadError) {
-          console.error('Resume upload error:', JSON.stringify(uploadError));
-        } else {
-          const { data: urlData } = supabase.storage
-            .from('resume')
-            .getPublicUrl(fileName);
-          resumeUrl = urlData.publicUrl;
-          console.log('Resume URL:', resumeUrl);
-        }
-
-        // Analyze resume with AI service (use /analyze-resume-text endpoint with JD as text)
-        if (job.jd_text || job.jd_keywords) {
-          const formData = new FormData();
-          formData.append('resume', fileBuffer, req.file.originalname);
-          formData.append('jd_text', job.jd_text || job.jd_keywords || '');
-
-          try {
-            const aiResponse = await axios.post('http://localhost:8000/analyze-resume-text', formData, {
-              headers: formData.getHeaders(),
-              maxBodyLength: Infinity,
-              timeout: 30000
-            });
-
-            if (aiResponse.status === 200) {
-              const aiData = aiResponse.data;
-              resumeScore = aiData.match_percentage || aiData.match_score || 0;
-              matchingSkills = aiData.matching_skills || [];
-              missingSkills = aiData.missing_skills || [];
-            }
-          } catch (aiError) {
-            console.error('AI resume screening error:', aiError.message);
-          }
-        }
-      } catch (e) {
-        console.error('Error processing resume:', e);
+      // If client didn't extract text, try reading as utf-8 (works for .txt; PDF will be binary)
+      if (!resumeText) {
+        resumeText = fileBuffer.toString('utf-8');
       }
     }
 
-    // Determine status based on score vs threshold
-    let status = 'screening';
-    if (resumeScore !== null && job.passing_threshold) {
-      status = resumeScore >= job.passing_threshold ? 'screening' : 'rejected';
+    console.log('[Apply] Resume text length:', resumeText?.length || 0, '| JD text length:', jdText?.length || 0);
+
+    // Simple keyword matching (no AI). Compares resume text against jd_keywords (or jd_text fallback).
+    if (resumeText && resumeText.trim().length > 50) {
+      const result = keywordMatch(resumeText, job.jd_keywords, jdText);
+      resumeScore = result.score;
+      matchingSkills = result.matchingSkills;
+      missingSkills = result.missingSkills;
+      console.log('[Apply] Keyword match score:', resumeScore, '| matched:', matchingSkills.length, '| missing:', missingSkills.length);
+    } else {
+      console.warn('[Apply] Resume text too short to score; defaulting to 0');
+      resumeScore = 0;
     }
 
-    const { data: application, error } = await supabase
-      .from('applications')
-      .insert([{
-        job_id: jobId,
-        student_id: req.user.id,
-        cover_letter: cover_letter || '',
-        resume_url: resumeUrl,
-        resume_score: resumeScore,
-        status,
-        resume_match_details: {
-          matching_skills: matchingSkills,
-          missing_skills: missingSkills
+    // New flow: every applicant proceeds to the exam — no review state.
+    let passedThreshold = true;
+    let status = 'exam_in_progress';
+    console.log('[Apply] Score', resumeScore, 'vs threshold', threshold, '→ proceeding to exam (review step skipped)');
+
+    // Build application data
+    const applicationData = {
+      job_id: jobId,
+      student_id: req.user.id,
+      status,
+      resume_score: resumeScore
+    };
+
+    if (matchingSkills.length > 0 || missingSkills.length > 0) {
+      applicationData.resume_match_details = {
+        matching_skills: matchingSkills,
+        missing_skills: missingSkills
+      };
+    }
+
+    // Generate 5 MCQs with Gemini, tailored to the resume + JD.
+    let questionsData = null;
+    if (genai) {
+      try {
+        console.log('[Apply] Generating exam questions with Gemini...');
+        const allSkills = [...matchingSkills, ...missingSkills];
+        const examSkills = allSkills.length > 0 ? allSkills.join(', ') : (jdText.substring(0, 200) || 'Software Engineering');
+
+        const prompt = `You are an expert technical interview question generator. Based on the candidate's resume and the job description, generate exactly 5 multiple-choice questions tailored to BOTH.
+
+Job Title: ${job.title}
+Job Description: ${jdText.substring(0, 2000)}
+Required / Inferred Skills: ${examSkills}
+
+Candidate Resume (excerpt):
+${(resumeText || '').substring(0, 4000)}
+
+Requirements:
+- Exactly 5 MCQs at intermediate difficulty
+- Mix questions: some on skills the candidate already has (from resume), some on the role's required skills
+- Each MCQ has 4 options labeled "a", "b", "c", "d" with ONE correct answer
+- Output ONLY raw valid JSON (no markdown code blocks, no backticks, no explanation) using this exact shape:
+{"questions":[{"id":"q1","type":"mcq","text":"...","options":[{"id":"a","text":"..."},{"id":"b","text":"..."},{"id":"c","text":"..."},{"id":"d","text":"..."}],"correct_answer":"b","points":20}],"duration_minutes":15,"total_points":100}`;
+
+        const examMsg = await genai.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: prompt,
+          config: { responseMimeType: 'application/json' }
+        });
+
+        const examText = examMsg.text || '';
+        console.log('[Apply] Gemini response (first 300 chars):', examText.substring(0, 300));
+
+        const parsed = extractJSON(examText);
+        if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+          questionsData = parsed;
+          applicationData.questions_data = questionsData;
+          console.log('[Apply] Exam generated with', questionsData.questions.length, 'questions');
+        } else {
+          console.warn('[Apply] Gemini did not return valid exam JSON');
         }
-      }])
+      } catch (examError) {
+        console.error('[Apply] Exam generation error:', examError.message || examError);
+        screeningError = examError.message;
+      }
+    } else {
+      console.warn('[Apply] Skipping question generation: GEMINI_API_KEY not set');
+    }
+
+    console.log('[Apply] Inserting application with data keys:', Object.keys(applicationData).join(', '));
+
+    const { data: application, error: insertError } = await supabase
+      .from('applications')
+      .insert([applicationData])
       .select()
       .single();
 
-    if (error) throw error;
+    if (insertError) {
+      console.error('[Apply] Insert error:', JSON.stringify(insertError));
+      throw insertError;
+    }
+
+    console.log('[Apply] Application created:', application?.id);
 
     res.status(201).json({
       success: true,
@@ -648,13 +752,179 @@ app.post('/api/jobs/:id/apply', upload.single('resume'), async (req, res) => {
       resume_score: resumeScore,
       matching_skills: matchingSkills,
       missing_skills: missingSkills,
-      passed_threshold: resumeScore !== null && job.passing_threshold
-        ? resumeScore >= job.passing_threshold
-        : null
+      passed_threshold: passedThreshold,
+      exam_generated: passedThreshold && questionsData !== null,
+      screening_error: screeningError
     });
   } catch (error) {
-    console.error('Error applying to job:', error);
-    res.status(500).json({ error: 'Error applying to job' });
+    console.error('[Apply] Error applying to job:', error);
+    res.status(500).json({ error: 'Error applying to job: ' + (error.message || error) });
+  }
+});
+
+// ============ EXAM ENDPOINTS (per application) ============
+
+// GET exam for a student
+app.get('/api/applications/:id/exam', async (req, res) => {
+  try {
+    if (!req.isAuthenticated() || req.user.role !== 'student') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { data: app, error: appError } = await supabase
+      .from('applications')
+      .select('id, student_id, job_id, status, questions_data, answers_data, jobs(title, description)')
+      .eq('id', req.params.id)
+      .single();
+
+    if (appError || !app) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    if (app.student_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (!app.questions_data?.questions) {
+      return res.status(404).json({ error: 'No exam found for this application' });
+    }
+
+    // Strip correct answers before sending to student
+    const questionsForStudent = app.questions_data.questions.map(q => {
+      const { correct_answer, expected_behavior, ...pub } = q;
+      return pub;
+    });
+
+    res.json({
+      applicationId: app.id,
+      jobTitle: app.jobs?.title,
+      status: app.status,
+      duration_minutes: app.questions_data.duration_minutes || 30,
+      total_points: app.questions_data.total_points || 80,
+      questions: questionsForStudent,
+      savedAnswers: app.answers_data || {}
+    });
+  } catch (error) {
+    console.error('[Exam] GET error:', error);
+    res.status(500).json({ error: 'Error fetching exam' });
+  }
+});
+
+// Save exam answers (auto-save as student progresses)
+app.post('/api/applications/:id/answers', async (req, res) => {
+  try {
+    if (!req.isAuthenticated() || req.user.role !== 'student') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { answers } = req.body;
+    if (!answers || typeof answers !== 'object') {
+      return res.status(400).json({ error: 'Answers object required' });
+    }
+
+    const { data: app, error: appError } = await supabase
+      .from('applications')
+      .select('id, student_id, status, answers_data')
+      .eq('id', req.params.id)
+      .single();
+
+    if (appError || !app) return res.status(404).json({ error: 'Application not found' });
+    if (app.student_id !== req.user.id) return res.status(403).json({ error: 'Not authorized' });
+    if (!['exam_in_progress', 'applied'].includes(app.status)) return res.status(400).json({ error: 'Exam not in progress' });
+
+    const mergedAnswers = { ...(app.answers_data || {}), ...answers };
+    const { error: updateError } = await supabase
+      .from('applications')
+      .update({ answers_data: mergedAnswers })
+      .eq('id', req.params.id);
+
+    if (updateError) throw updateError;
+    res.json({ success: true, answerCount: Object.keys(mergedAnswers).length });
+  } catch (error) {
+    console.error('[Exam] POST answers error:', error);
+    res.status(500).json({ error: 'Error saving answers' });
+  }
+});
+
+// Submit exam and auto-score
+app.post('/api/applications/:id/submit', async (req, res) => {
+  try {
+    if (!req.isAuthenticated() || req.user.role !== 'student') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { data: app, error: appError } = await supabase
+      .from('applications')
+      .select('id, student_id, status, questions_data, answers_data')
+      .eq('id', req.params.id)
+      .single();
+
+    if (appError || !app) return res.status(404).json({ error: 'Application not found' });
+    if (app.student_id !== req.user.id) return res.status(403).json({ error: 'Not authorized' });
+    if (!app.questions_data?.questions) return res.status(404).json({ error: 'No exam found' });
+
+    const questions = app.questions_data.questions;
+    const answers = app.answers_data || req.body.answers || {};
+
+    let totalEarned = 0;
+    let totalPossible = 0;
+    const detailedResults = [];
+
+    for (const q of questions) {
+      totalPossible += q.points || 10;
+      if (q.type === 'mcq') {
+        const correct = q.correct_answer?.toLowerCase();
+        const given = (answers[q.id] || '').toLowerCase();
+        const earned = (given === correct) ? (q.points || 10) : 0;
+        totalEarned += earned;
+        detailedResults.push({ id: q.id, type: 'mcq', correct, given: answers[q.id] || null, earned });
+      } else if (q.type === 'coding') {
+        const codeAnswer = answers[q.id];
+        if (codeAnswer && codeAnswer.trim().length > 10 && genai) {
+          try {
+            const evalMsg = await genai.models.generateContent({
+              model: GEMINI_MODEL,
+              contents: `You are a code evaluator. Score from 0 to ${q.points || 30} based on correctness.
+
+Question: ${q.text}
+Expected behavior: ${q.expected_behavior || 'Implement the described functionality'}
+Submitted code:
+${codeAnswer}
+
+Respond ONLY with valid JSON:
+{"score": 0-30, "feedback": "brief feedback"}`,
+              config: { responseMimeType: 'application/json' }
+            });
+            const r = extractJSON(evalMsg.text || '') || {};
+            const codingScore = Math.round(Number(r.score) || 0);
+            const feedback = r.feedback || '';
+            totalEarned += codingScore;
+            detailedResults.push({ id: q.id, type: 'coding', earned: codingScore, feedback });
+          } catch (e) {
+            console.error('[Exam] Coding eval error:', e.message);
+            detailedResults.push({ id: q.id, type: 'coding', earned: 0, feedback: 'Evaluation error' });
+          }
+        } else {
+          detailedResults.push({ id: q.id, type: 'coding', earned: 0, feedback: 'No code submitted' });
+        }
+      }
+    }
+
+    const testScore = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
+    console.log('[Exam] Final score:', testScore, '% (earned', totalEarned, '/', totalPossible, ')');
+
+    await supabase
+      .from('applications')
+      .update({
+        status: 'completed',
+        test_score: testScore,
+        completed_at: new Date().toISOString(),
+        answers_data: answers
+      })
+      .eq('id', req.params.id);
+
+    res.json({ success: true, test_score: testScore, total_earned: totalEarned, total_possible: totalPossible, detailed_results: detailedResults });
+  } catch (error) {
+    console.error('[Exam] Submit error:', error);
+    res.status(500).json({ error: 'Error submitting exam' });
   }
 });
 
