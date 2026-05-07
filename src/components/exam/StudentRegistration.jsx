@@ -151,28 +151,45 @@ const StudentRegistration = ({ examId, onRegister }) => {
       alert('Please enter your name');
       return;
     }
-    
+
     try {
       setLoading(true);
-      
-      // Start exam session
-      const session = await examService.startExamSession(
-        examId, 
-        studentName, 
-        studentEmail
-      );
-      
+
+      // Start exam session via API
+      const res = await fetch('http://localhost:5001/api/exams/sessions/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          examId,
+          studentName,
+          studentEmail
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to start exam session');
+      }
+
+      const session = await res.json();
       setSessionId(session.id);
-      
+
       // If webcam is active, register face
       if (webcamActive) {
         const screenshot = await takeScreenshot();
         if (screenshot) {
-          await examService.registerFace(session.id, screenshot);
+          const formData = new FormData();
+          formData.append('faceImage', screenshot);
+
+          await fetch(`http://localhost:5001/api/exams/sessions/${session.id}/face`, {
+            method: 'POST',
+            credentials: 'include',
+            body: formData
+          });
           setFaceRegistered(true);
         }
       }
-      
+
       // Proceed to exam
       if (onRegister) {
         onRegister(session.id);

@@ -45,16 +45,16 @@ const StatIcon = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: ${props => 
-    props.type === 'students' ? 'rgba(67, 97, 238, 0.1)' : 
-    props.type === 'warnings' ? 'rgba(255, 190, 11, 0.1)' :
-    props.type === 'completed' ? 'rgba(76, 201, 240, 0.1)' :
+  background-color: ${props =>
+    props.$type === 'students' ? 'rgba(67, 97, 238, 0.1)' :
+    props.$type === 'warnings' ? 'rgba(255, 190, 11, 0.1)' :
+    props.$type === 'completed' ? 'rgba(76, 201, 240, 0.1)' :
     'rgba(67, 97, 238, 0.1)'
   };
-  color: ${props => 
-    props.type === 'students' ? 'var(--primary)' : 
-    props.type === 'warnings' ? 'var(--warning)' :
-    props.type === 'completed' ? 'var(--success)' :
+  color: ${props =>
+    props.$type === 'students' ? 'var(--primary)' :
+    props.$type === 'warnings' ? 'var(--warning)' :
+    props.$type === 'completed' ? 'var(--success)' :
     'var(--primary)'
   };
 `;
@@ -75,7 +75,7 @@ const ControlBar = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  
+
   @media (max-width: 768px) {
     flex-direction: column;
     align-items: flex-start;
@@ -91,12 +91,12 @@ const SearchBar = styled.div`
   padding: 0 16px;
   box-shadow: var(--shadow);
   width: 300px;
-  
+
   input {
     border: none;
     padding: 12px 0;
     width: 100%;
-    
+
     &:focus {
       outline: none;
     }
@@ -134,7 +134,7 @@ const StudentAvatar = styled.div`
   border-radius: 50%;
   background-color: var(--background);
   overflow: hidden;
-  
+
   img {
     width: 100%;
     height: 100%;
@@ -169,18 +169,18 @@ const StatusBadge = styled.span`
   border-radius: 20px;
   font-size: 0.85rem;
   font-weight: 500;
-  background-color: ${props => 
-    props.status === 'active' ? 'rgba(76, 201, 240, 0.1)' : 
-    props.status === 'warning' ? 'rgba(255, 190, 11, 0.1)' :
-    props.status === 'critical' ? 'rgba(230, 57, 70, 0.1)' :
-    props.status === 'completed' ? 'rgba(76, 201, 240, 0.1)' :
+  background-color: ${props =>
+    props.$status === 'active' ? 'rgba(76, 201, 240, 0.1)' :
+    props.$status === 'warning' ? 'rgba(255, 190, 11, 0.1)' :
+    props.$status === 'critical' ? 'rgba(230, 57, 70, 0.1)' :
+    props.$status === 'completed' ? 'rgba(76, 201, 240, 0.1)' :
     'rgba(141, 153, 174, 0.1)'
   };
-  color: ${props => 
-    props.status === 'active' ? 'var(--success)' : 
-    props.status === 'warning' ? 'var(--warning)' :
-    props.status === 'critical' ? 'var(--danger)' :
-    props.status === 'completed' ? 'var(--success)' :
+  color: ${props =>
+    props.$status === 'active' ? 'var(--success)' :
+    props.$status === 'warning' ? 'var(--warning)' :
+    props.$status === 'critical' ? 'var(--danger)' :
+    props.$status === 'completed' ? 'var(--success)' :
     'var(--text-secondary)'
   };
 `;
@@ -208,55 +208,56 @@ const ActionButtons = styled.div`
   margin-top: 16px;
 `;
 
+const LoadingState = styled.div`
+  text-align: center;
+  padding: 4rem;
+  color: var(--text-secondary);
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+  grid-column: 1 / -1;
+`;
+
 const ProctorDashboard = () => {
   const [students, setStudents] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredStudents, setFilteredStudents] = useState([]);
-  const [examTime, setExamTime] = useState(7200); // Default duration
+  const [examTime, setExamTime] = useState(0);
   const [exams, setExams] = useState([]);
   const [selectedExam, setSelectedExam] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch available exams
   useEffect(() => {
-    fetch('http://localhost:5000/api/exams', {
-      credentials: 'include'
-    })
-      .then(res => res.json())
-      .then(data => setExams(data))
-      .catch(err => console.error('Error fetching exams:', err));
+    fetchExams();
   }, []);
 
-  // Fetch students for selected exam
   useEffect(() => {
     if (selectedExam) {
-      fetch(`http://localhost:5000/api/exams/${selectedExam}/students`, {
-        credentials: 'include'
-      })
-        .then(res => res.json())
-        .then(data => {
-          setStudents(data);
-          setFilteredStudents(data);
-        })
-        .catch(err => console.error('Error fetching students:', err));
+      fetchStudents();
+    } else {
+      setStudents([]);
+      setFilteredStudents([]);
+      setLoading(false);
     }
   }, [selectedExam]);
 
-  // Filter students based on search term
   useEffect(() => {
     if (!searchTerm) {
       setFilteredStudents(students);
       return;
     }
-    
-    const filtered = students.filter(student => 
-      student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase())
+
+    const filtered = students.filter(student =>
+      (student.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (student.email || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
-    
+
     setFilteredStudents(filtered);
   }, [searchTerm, students]);
 
-  // Countdown exam timer
   useEffect(() => {
     const timer = setInterval(() => {
       setExamTime(prev => {
@@ -267,30 +268,78 @@ const ProctorDashboard = () => {
         return prev - 1;
       });
     }, 1000);
-    
+
     return () => clearInterval(timer);
   }, []);
 
-  // Stats calculations
-  const activeStudents = students.filter(s => s.status !== 'completed').length;
-  const totalWarnings = students.reduce((sum, student) => sum + student.warnings, 0);
-  const completedExams = students.filter(s => s.status === 'completed').length;
+  const fetchExams = async () => {
+    try {
+      const res = await fetch('http://localhost:5001/api/exams', {
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setExams(data);
+      }
+    } catch (err) {
+      console.error('Error fetching exams:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Handle sending warning to a student
+  const fetchStudents = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`http://localhost:5001/api/exams/${selectedExam}/students`, {
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setStudents(data);
+        setFilteredStudents(data);
+      } else {
+        setStudents([]);
+        setFilteredStudents([]);
+      }
+    } catch (err) {
+      console.error('Error fetching students:', err);
+      setStudents([]);
+      setFilteredStudents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSendWarning = (studentId) => {
-    setStudents(prev => 
-      prev.map(student => 
-        student.id === studentId 
-          ? { ...student, warnings: student.warnings + 1, status: student.warnings >= 3 ? 'critical' : 'warning' }
+    setStudents(prev =>
+      prev.map(student =>
+        student.id === studentId
+          ? { ...student, warnings: (student.warnings || 0) + 1, status: student.warnings >= 3 ? 'critical' : 'warning' }
           : student
       )
     );
   };
 
+  if (loading && selectedExam) {
+    return (
+      <DashboardContainer>
+        <Header />
+        <DashboardContent>
+          <LoadingState>Loading...</LoadingState>
+        </DashboardContent>
+      </DashboardContainer>
+    );
+  }
+
+  const activeStudents = Array.isArray(students) ? students.filter(s => s.status !== 'completed').length : 0;
+  const totalWarnings = Array.isArray(students) ? students.reduce((sum, student) => sum + (student.warnings || 0), 0) : 0;
+  const completedExams = Array.isArray(students) ? students.filter(s => s.status === 'completed').length : 0;
+
   return (
     <DashboardContainer>
       <Header />
-      
+
       <DashboardContent>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -298,22 +347,25 @@ const ProctorDashboard = () => {
           transition={{ duration: 0.5 }}
         >
           <h1>Exam Monitoring Dashboard</h1>
-          <p style={{ marginBottom: '16px' }}>{selectedExam ? exams.find(e => e.id === selectedExam)?.title : 'Select an exam'}</p>
-          
-          <ExamSelector 
-            value={selectedExam || ''} 
+          <p style={{ marginBottom: '16px' }}>
+            {selectedExam && exams.find(e => e.id === selectedExam) ? exams.find(e => e.id === selectedExam).title : 'Select an exam to monitor'}
+          </p>
+
+          <ExamSelector
+            value={selectedExam || ''}
             onChange={e => setSelectedExam(e.target.value)}
+            style={{ marginBottom: '24px' }}
           >
             <option value="">Select Exam</option>
-            {exams.map(exam => (
+            {Array.isArray(exams) && exams.map(exam => (
               <option key={exam.id} value={exam.id}>{exam.title} ({exam.exam_code})</option>
             ))}
           </ExamSelector>
-          
+
           <StatsGrid>
             <StatCard>
               <StatHeader>
-                <StatIcon type="students">
+                <StatIcon $type="students">
                   <FiUsers size={24} />
                 </StatIcon>
                 <FiClock size={20} color="var(--text-secondary)" />
@@ -321,10 +373,10 @@ const ProctorDashboard = () => {
               <StatValue>{activeStudents}</StatValue>
               <StatLabel>Active Students</StatLabel>
             </StatCard>
-            
+
             <StatCard>
               <StatHeader>
-                <StatIcon type="warnings">
+                <StatIcon $type="warnings">
                   <FiAlertTriangle size={24} />
                 </StatIcon>
                 <FiClock size={20} color="var(--text-secondary)" />
@@ -332,10 +384,10 @@ const ProctorDashboard = () => {
               <StatValue>{totalWarnings}</StatValue>
               <StatLabel>Total Warnings</StatLabel>
             </StatCard>
-            
+
             <StatCard>
               <StatHeader>
-                <StatIcon type="completed">
+                <StatIcon $type="completed">
                   <FiCheckCircle size={24} />
                 </StatIcon>
                 <FiClock size={20} color="var(--text-secondary)" />
@@ -343,7 +395,7 @@ const ProctorDashboard = () => {
               <StatValue>{completedExams}</StatValue>
               <StatLabel>Completed Exams</StatLabel>
             </StatCard>
-            
+
             <StatCard>
               <StatHeader>
                 <StatIcon>
@@ -357,113 +409,121 @@ const ProctorDashboard = () => {
               <StatLabel>Remaining Time</StatLabel>
             </StatCard>
           </StatsGrid>
-          
+
           <ControlBar>
             <SearchBar>
               <FiSearch size={20} color="var(--text-secondary)" />
-              <input 
-                type="text" 
-                placeholder="Search students..." 
+              <input
+                type="text"
+                placeholder="Search students..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </SearchBar>
-            
-            <div>
-              <Button variant="primary">End Exam</Button>
-            </div>
+
+            <Button variant="primary">End Exam</Button>
           </ControlBar>
-          
-          <StudentGrid>
-            <AnimatePresence>
-              {filteredStudents.map(student => (
-                <motion.div
-                  key={student.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.3 }}
-                  layout
-                >
-                  <StudentCard>
-                    {student.warnings > 0 && (
-                      <WarningBadge>{student.warnings}</WarningBadge>
-                    )}
-                    
-                    <StudentHeader>
-                      <StudentAvatar>
-                        <img src={student.avatar || 'https://randomuser.me/api/portraits/men/32.jpg'} alt={student.name} />
-                      </StudentAvatar>
-                      <StudentInfo>
-                        <StudentName>{student.name}</StudentName>
-                        <StudentEmail>{student.email}</StudentEmail>
-                      </StudentInfo>
-                    </StudentHeader>
-                    
-                    <div>
-                      <div style={{ marginBottom: '8px' }}>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Progress:</span>
-                        <div style={{ 
-                          height: '6px', 
-                          background: 'var(--background)', 
-                          borderRadius: '3px',
-                          marginTop: '6px',
-                          overflow: 'hidden'
-                        }}>
-                          <div style={{ 
-                            height: '100%', 
-                            width: `${student.progress}%`,
-                            background: 'var(--primary)',
-                            borderRadius: '3px'
-                          }} />
+
+          {!selectedExam ? (
+            <EmptyState>
+              <p>Please select an exam from the dropdown above to view monitoring dashboard.</p>
+            </EmptyState>
+          ) : filteredStudents.length === 0 ? (
+            <EmptyState>
+              <p>No students found for this exam.</p>
+            </EmptyState>
+          ) : (
+            <StudentGrid>
+              <AnimatePresence>
+                {filteredStudents.map(student => (
+                  <motion.div
+                    key={student.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.3 }}
+                    layout
+                  >
+                    <StudentCard>
+                      {(student.warnings || 0) > 0 && (
+                        <WarningBadge>{student.warnings}</WarningBadge>
+                      )}
+
+                      <StudentHeader>
+                        <StudentAvatar>
+                          <img src={student.avatar || 'https://randomuser.me/api/portraits/men/32.jpg'} alt={student.name || 'Student'} />
+                        </StudentAvatar>
+                        <StudentInfo>
+                          <StudentName>{student.name || 'Unknown Student'}</StudentName>
+                          <StudentEmail>{student.email || 'No email'}</StudentEmail>
+                        </StudentInfo>
+                      </StudentHeader>
+
+                      <div>
+                        <div style={{ marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Progress:</span>
+                          <div style={{
+                            height: '6px',
+                            background: 'var(--background)',
+                            borderRadius: '3px',
+                            marginTop: '6px',
+                            overflow: 'hidden'
+                          }}>
+                            <div style={{
+                              height: '100%',
+                              width: `${student.progress || 0}%`,
+                              background: 'var(--primary)',
+                              borderRadius: '3px'
+                            }} />
+                          </div>
                         </div>
+
+                        <StudentStatus>
+                          <StatusBadge $status={student.status || 'active'}>
+                            {student.status === 'active' && <FiCheckCircle size={14} />}
+                            {student.status === 'warning' && <FiAlertTriangle size={14} />}
+                            {student.status === 'critical' && <FiAlertTriangle size={14} />}
+                            {student.status === 'completed' && <FiCheckCircle size={14} />}
+                            {(student.status || 'active').charAt(0).toUpperCase() + (student.status || 'active').slice(1)}
+                          </StatusBadge>
+
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                            {student.progress || 0}% Complete
+                          </span>
+                        </StudentStatus>
                       </div>
-                      
-                      <StudentStatus>
-                        <StatusBadge status={student.status}>
-                          {student.status === 'active' && <FiCheckCircle size={14} />}
-                          {student.status === 'warning' && <FiAlertTriangle size={14} />}
-                          {student.status === 'critical' && <FiAlertTriangle size={14} />}
-                          {student.status === 'completed' && <FiCheckCircle size={14} />}
-                          {student.status.charAt(0).toUpperCase() + student.status.slice(1)}
-                        </StatusBadge>
-                        
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          {student.progress}% Complete
-                        </span>
-                      </StudentStatus>
-                    </div>
-                    
-                    <ActionButtons>
-                      <Button 
-                        size="small" 
-                        variant="primary"
-                        icon={<FiEye size={16} />}
-                      >
-                        View
-                      </Button>
-                      
-                      <Button 
-                        size="small" 
-                        variant="secondary"
-                        icon={<FiMessageSquare size={16} />}
-                      >
-                        Message
-                      </Button>
-                      
-                      <Button 
-                        size="small" 
-                        variant="danger"
-                        onClick={() => handleSendWarning(student.id)}
-                      >
-                        Send Warning
-                      </Button>
-                    </ActionButtons>
-                  </StudentCard>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </StudentGrid>
+
+                      <ActionButtons>
+                        <Button
+                          size="small"
+                          variant="primary"
+                          icon={<FiEye size={16} />}
+                        >
+                          View
+                        </Button>
+
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          icon={<FiMessageSquare size={16} />}
+                        >
+                          Message
+                        </Button>
+
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => handleSendWarning(student.id)}
+                        >
+                          Send Warning
+                        </Button>
+                      </ActionButtons>
+                    </StudentCard>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </StudentGrid>
+          )}
         </motion.div>
       </DashboardContent>
     </DashboardContainer>
