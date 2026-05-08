@@ -119,33 +119,20 @@ export default function StudentLogin() {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-
+    
     try {
-      const res = await fetch('http://localhost:5001/api/login/student', {
+      const res = await fetch('http://localhost:5000/api/login/student', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ email, password, exam_code: examCode }),
       });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        sessionStorage.setItem('user', JSON.stringify(data.user));
-        sessionStorage.setItem('role', data.user.role);
-
-        // If exam code was provided, go to exam
-        if (data.job) {
-          navigate('/resume-screening', {
-            state: {
-              job: data.job,
-            }
-          });
-        } else {
-          // Go to browse jobs
-          navigate('/jobs');
-        }
+      
+      if (res.ok) {
+        const data = await res.json();
+        navigate('/resume-screening', { state: { exam: data.exam, sessionId: data.session_id } });
       } else {
+        const data = await res.json();
         setError(data.error || 'Invalid credentials or exam code');
       }
     } catch (err) {

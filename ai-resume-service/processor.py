@@ -1,34 +1,21 @@
 from dotenv import load_dotenv
 import os
+
 import re
 import PyPDF2
+import spacy
 import joblib
+from googleapiclient.discovery import build
 from concurrent.futures import ThreadPoolExecutor
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 load_dotenv()
 
-# Try to load spacy (optional - make it non-fatal if not available)
-try:
-    import spacy
-    nlp = spacy.load("en_core_web_sm")
-    SPACY_AVAILABLE = True
-except:
-    SPACY_AVAILABLE = False
-    print("Warning: spacy not available, role prediction will use keyword matching only")
-
-# Load ML model
-try:
-    model = joblib.load("utils/model.pkl")
-    vectorizer = joblib.load("utils/vectorizer.pkl")
-    ML_AVAILABLE = True
-except:
-    ML_AVAILABLE = False
-    model = None
-    vectorizer = None
-    print("Warning: ML model not available, using fallback role prediction")
-
+# Load resources once at startup
+nlp = spacy.load("en_core_web_sm")
+model = joblib.load("utils/model.pkl")
+vectorizer = joblib.load("utils/vectorizer.pkl")
 semantic_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 SHORTLIST_THRESHOLD = 60
 
@@ -46,34 +33,54 @@ def extract_skills(text, skills_set):
     text_lower = text.lower()
     return {skill for skill in skills_set if skill in text_lower}
 
-def predict_role(resume_text, skills_set):
-    """Predict role from resume skills."""
-    if not ML_AVAILABLE or model is None:
-        # Fallback: return most common role based on skill count
-        resume_skills = extract_skills(resume_text, skills_set)
-        if len(resume_skills) > 5:
-            return "Full Stack Developer"
-        return "Software Developer"
-
-    resume_skills = " ".join(extract_skills(resume_text, skills_set))
+def predict_role(resume_text, skills_list):
+    resume_skills = " ".join(extract_skills(resume_text, skills_list))
     resume_vectorized = vectorizer.transform([resume_skills])
     predicted_role = model.predict(resume_vectorized)[0]
     return predicted_role
 
 def provide_feedback_with_cohere(missing_skills, role):
-    """Generate feedback for missing skills (placeholder - requires API key)."""
-    return "Focus on learning: " + ", ".join(list(missing_skills)[:3])
+    
+    co = cohere.Client(os.getenv("COHERE_API_KEY"))
+    missing_skills_str = ", ".join(missing_skills)
+    prompt = f"""
+    The candidate is applying for the role of '{role}'. Their resume is missing the following skills: {missing_skills_str}.
+    Provide detailed suggestions on how the candidate can improve their resume, considering the role they are applying for.
+    """
+    response = co.generate(
+        model='command',
+        prompt=prompt,
+        max_tokens=300,
+        temperature=0.7
+    )
+    feedback = response.generations[0].text.strip()
+    return feedback
 
-def recommend_youtube_videos(missing_skills, api_key=None):
+def recommend_youtube_videos(missing_skills, api_key):
     """
-    Fetch YouTube video recommendations for missing skills (placeholder).
-    In production, requires YouTube Data API key.
+    Fetch YouTube video recommendations for missing skills.
     """
+    youtube = build('youtube', 'v3', developerKey=api_key)
     recommendations = {}
-    for skill in list(missing_skills)[:3]:  # Limit to 3 skills
-        recommendations[skill] = [
-            f"Search '{skill} tutorial' on YouTube for learning resources"
-        ]
+
+    for skill in missing_skills:
+        request = youtube.search().list(
+            part="snippet",
+            q=f"{skill} tutorial",
+            type="video",
+            maxResults=5
+        )
+        response = request.execute()
+
+        videos = []
+        for item in response['items']:
+            title = item['snippet']['title']
+            video_id = item['id']['videoId']
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            videos.append(f"{title}: {video_url}")
+
+        recommendations[skill] = videos
+
     return recommendations
 
 def process_resume(resume_path, jd_text, skills_set):

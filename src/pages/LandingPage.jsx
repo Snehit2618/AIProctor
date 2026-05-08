@@ -1,418 +1,516 @@
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-import { FiUser, FiShield, FiBriefcase, FiChevronRight, FiCheck, FiZap, FiEye, FiLock, FiUsers, FiTrendingUp } from 'react-icons/fi';
+import { FiUser, FiShield, FiChevronDown } from 'react-icons/fi';
+import Lottie from 'lottie-react';
+import proctorAnimation from '../assets/ai-proctor.json';
+import robotAnimation from '../assets/robot-animation.json';
+import { useEffect, useRef, useState } from 'react';
+
+// Particle component for the background lights
+const Particle = styled(motion.div)`
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, var(--primary) 0%, transparent 70%);
+  pointer-events: none;
+  opacity: 0.8;
+  box-shadow: 0 0 15px 3px var(--primary);
+`;
 
 const LandingContainer = styled.div`
   min-height: 100vh;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  background-color: var(--background);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+`;
+
+const ParticlesContainer = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
 `;
 
 const NavBar = styled.nav`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 4rem;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border);
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+  padding: 1.2rem 3rem;
+  background-color: rgba(var(--card-bg-rgb), 0.8);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
+  position: relative;
+  z-index: 10;
+
+  @media (max-width: 768px) {
+    padding: 1rem 1.5rem;
+  }
 `;
 
 const Logo = styled.div`
-  font-weight: 800;
-  font-size: 1.75rem;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+  font-weight: 700;
+  font-size: 1.8rem;
+  background: linear-gradient(90deg, #5B5FEF 0%, #7E41E0 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+  text-shadow: 0 0 10px rgba(91, 95, 239, 0.3);
 `;
 
 const NavButtons = styled.div`
   display: flex;
-  gap: 1rem;
+  gap: 16px;
 `;
 
-const NavButton = styled(motion.button)`
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.75rem;
-  font-weight: 600;
-  font-size: 0.9rem;
+const LoginButton = styled(motion.button)`
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
+  gap: 8px;
+  padding: 0.75rem 1.5rem;
   border: none;
+  border-radius: 8px;
+  background-color: ${props => props.variant === 'admin' ? 'var(--primary)' : 'var(--success)'};
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: 1rem;
   transition: all 0.2s ease;
-
-  ${props => {
-    const styles = {
-      jobseeker: 'background: var(--surface); color: var(--text-primary); border: 1px solid var(--border);',
-      employer: 'background: var(--primary); color: white;',
-      admin: 'background: var(--secondary); color: white;',
-      primary: 'background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white;'
-    };
-    return styles[props.$type] || styles.primary;
-  }}
+  box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    box-shadow: 0 4px 20px rgba(var(--primary-rgb), 0.5);
   }
 `;
 
-const HeroSection = styled.section`
-  padding: 8rem 4rem 4rem;
+const MainContent = styled.main`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 2rem 4rem;
   text-align: center;
   position: relative;
-  overflow: hidden;
+  z-index: 1;
 `;
 
-const HeroContent = styled.div`
-  max-width: 900px;
-  margin: 0 auto;
-`;
-
-const Badge = styled(motion.div)`
-  display: inline-flex;
+const HeroSection = styled.div`
+  width: 100%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--info-light);
-  color: var(--primary);
-  border-radius: 9999px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
+  padding-top: 2rem;
+  position: relative;
+`;
+
+const RobotAnimationContainer = styled(motion.div)`
+  width: 300px;
+  height: 300px;
+  z-index: 5;
+  filter: drop-shadow(0 0 30px rgba(var(--primary-rgb), 0.7));
+  margin-bottom: -30px;
+`;
+
+const GlowingCircle = styled(motion.div)`
+  position: absolute;
+  top: 150px;
+  width: 350px;
+  height: 350px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(var(--primary-rgb), 0.3) 0%, transparent 70%);
+  z-index: 2;
 `;
 
 const Title = styled(motion.h1)`
   font-size: 3.5rem;
-  font-weight: 800;
   color: var(--text-primary);
-  margin-bottom: 1.5rem;
-  line-height: 1.2;
-
-  span {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
+  margin-bottom: 1rem;
+  text-shadow: 0 0 10px rgba(var(--primary-rgb), 0.3);
+  
   @media (max-width: 768px) {
     font-size: 2.5rem;
   }
 `;
 
 const Subtitle = styled(motion.p)`
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   color: var(--text-secondary);
   max-width: 700px;
   margin: 0 auto 3rem;
-  line-height: 1.7;
+  line-height: 1.6;
+  
+  @media (max-width: 768px) {
+    font-size: 1.1rem;
+  }
 `;
 
-const RoleCards = styled(motion.div)`
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
-  max-width: 1000px;
-  margin: 3rem auto 0;
+const AnimationContainer = styled(motion.div)`
+  width: 100%;
+  max-width: 800px;
+  margin: 2rem auto 0;
+  position: relative;
+  height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
 
+const ScrollIndicator = styled(motion.div)`
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  gap: 8px;
+  cursor: pointer;
+`;
+
+const FeaturesSection = styled.section`
+  width: 100%;
+  max-width: 1400px;
+  margin: 6rem auto 0;
+  padding: 4rem 2rem;
+  background: rgba(var(--card-bg-rgb), 0.7);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(var(--primary-rgb), 0.1);
+  box-shadow: var(--shadow);
+`;
+
+const SectionTitle = styled.h2`
+  font-size: 2.5rem;
+  color: var(--text-primary);
+  margin-bottom: 3rem;
+  text-align: center;
+`;
+
+const FeaturesGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 3;
+  
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
   }
 `;
 
-const RoleCard = styled(motion.div)`
-  background: var(--surface);
-  border-radius: 1.25rem;
+const FeatureCard = styled(motion.div)`
+  background-color: rgba(var(--card-bg-rgb), 0.7);
+  backdrop-filter: blur(10px);
   padding: 2rem;
-  text-align: left;
+  border-radius: 16px;
   box-shadow: var(--shadow);
-  border: 1px solid var(--border-light);
-  cursor: pointer;
+  text-align: left;
+  border: 1px solid rgba(var(--primary-rgb), 0.1);
   transition: all 0.3s ease;
 
   &:hover {
-    transform: translateY(-8px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--primary);
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--primary-rgb), 0.3);
   }
 `;
 
-const RoleIcon = styled.div`
-  width: 56px;
-  height: 56px;
-  border-radius: 1rem;
+const FeatureIconContainer = styled.div`
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  background: rgba(var(--primary-rgb), 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 1.5rem;
-  background: ${props => props.$bg || 'var(--info-light)'};
-  color: ${props => props.$color || 'var(--primary)'};
+  font-size: 2rem;
 `;
 
-const RoleTitle = styled.h3`
-  font-size: 1.25rem;
-  font-weight: 700;
+const FeatureTitle = styled.h3`
   color: var(--text-primary);
-  margin-bottom: 0.5rem;
-`;
-
-const RoleDescription = styled.p`
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  margin-bottom: 1.5rem;
-  line-height: 1.6;
-`;
-
-const RoleFeatures = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-`;
-
-const FeatureItem = styled.div`
+  margin-bottom: 1rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: 1.4rem;
+`;
+
+const FeatureDescription = styled.p`
   color: var(--text-secondary);
-`;
-
-const FeatureDot = styled.div`
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
-`;
-
-const CTAButton = styled(motion.button)`
-  padding: 1rem 2.5rem;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-  color: white;
-  border: none;
-  border-radius: 0.75rem;
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 3rem;
-  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
-  }
-`;
-
-const StatsSection = styled.section`
-  background: var(--surface);
-  padding: 4rem;
-  margin-top: 4rem;
-`;
-
-const StatsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
-
-  @media (max-width: 768px) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-`;
-
-const StatItem = styled(motion.div)`
-  text-align: center;
-`;
-
-const StatValue = styled.h2`
-  font-size: 3rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin-bottom: 0.5rem;
-`;
-
-const StatLabel = styled.p`
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-`;
-
-const FooterSection = styled.footer`
-  background: var(--secondary);
-  color: white;
-  padding: 3rem 4rem;
-  text-align: center;
-`;
-
-const FooterText = styled.p`
-  font-size: 0.9rem;
-  opacity: 0.8;
+  line-height: 1.8;
 `;
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const particlesContainerRef = useRef(null);
+  const [particles, setParticles] = useState([]);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const featuresRef = useRef(null);
 
-  const roles = [
+  // Create particles - increased count to 120
+  useEffect(() => {
+    const particlesCount = 120;
+    const newParticles = Array.from({ length: particlesCount }).map((_, i) => ({
+      id: i,
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      size: Math.random() * 6 + 2,
+      color: `hsl(${Math.random() * 60 + 200}, 100%, 50%)`,
+      velocity: {
+        x: Math.random() * 0.5 - 0.25,
+        y: Math.random() * 0.5 - 0.25
+      }
+    }));
+    setParticles(newParticles);
+  }, []);
+
+  // Handle mouse movement
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, []);
+
+  // Update particles based on mouse position
+  useEffect(() => {
+    if (particles.length === 0) return;
+
+    const updateParticles = () => {
+      setParticles(prevParticles => 
+        prevParticles.map(particle => {
+          // Calculate distance from mouse
+          const dx = mousePosition.x - particle.x;
+          const dy = mousePosition.y - particle.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // Apply force inversely proportional to distance
+          let newVelocityX = particle.velocity.x;
+          let newVelocityY = particle.velocity.y;
+          
+          if (distance < 200) {
+            const force = 0.5 * (1 - distance / 200);
+            newVelocityX -= dx * force * 0.01;
+            newVelocityY -= dy * force * 0.01;
+          }
+          
+          // Apply velocity with boundaries
+          let newX = particle.x + newVelocityX;
+          let newY = particle.y + newVelocityY;
+          
+          // Bounce off walls
+          if (newX < 0 || newX > window.innerWidth) {
+            newVelocityX *= -1;
+            newX = particle.x;
+          }
+          
+          if (newY < 0 || newY > window.innerHeight) {
+            newVelocityY *= -1;
+            newY = particle.y;
+          }
+          
+          // Add some random movement
+          newVelocityX += (Math.random() - 0.5) * 0.05;
+          newVelocityY += (Math.random() - 0.5) * 0.05;
+          
+          // Dampen velocity
+          newVelocityX *= 0.98;
+          newVelocityY *= 0.98;
+          
+          return {
+            ...particle,
+            x: newX,
+            y: newY,
+            velocity: {
+              x: newVelocityX,
+              y: newVelocityY
+            }
+          };
+        })
+      );
+    };
+
+    const animationId = requestAnimationFrame(updateParticles);
+    return () => cancelAnimationFrame(animationId);
+  }, [particles, mousePosition]);
+
+  const scrollToFeatures = () => {
+    featuresRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const features = [
     {
-      type: 'jobseeker',
-      icon: <FiUser size={28} />,
-      title: 'Job Seekers',
-      description: 'Find your dream job, upload your resume, pass AI-screening, and ace exams to get hired.',
-      features: ['Browse thousands of jobs', 'AI resume screening', 'Take proctored exams', 'Track application status'],
-      bg: 'var(--success-light)',
-      color: 'var(--success)',
-      path: '/jobseeker-login'
+      title: 'AI-Powered Proctoring',
+      description: 'Advanced facial recognition and behavior analysis to ensure exam integrity with real-time monitoring.',
+      icon: '🤖'
     },
     {
-      type: 'employer',
-      icon: <FiBriefcase size={28} />,
-      title: 'Employers',
-      description: 'Post jobs, create exams, review candidates with AI-powered screening and analytics.',
-      features: ['Post jobs instantly', 'Create custom exams', 'AI candidate matching', 'Real-time analytics'],
-      bg: 'var(--info-light)',
-      color: 'var(--primary)',
-      path: '/employer-login'
+      title: 'Real-time Monitoring',
+      description: 'Instant alerts for suspicious activities and multiple face detection with comprehensive reporting.',
+      icon: '👁️'
     },
     {
-      type: 'admin',
-      icon: <FiShield size={28} />,
-      title: 'Administrators',
-      description: 'Monitor all exams in real-time, manage users, and ensure system integrity.',
-      features: ['Live exam monitoring', 'System analytics', 'User management', 'Security controls'],
-      bg: 'var(--warning-light)',
-      color: 'var(--warning)',
-      path: '/admin-login'
+      title: 'Secure Environment',
+      description: 'Full-screen mode enforcement and tab switching prevention with encrypted data transmission.',
+      icon: '🔒'
+    },
+    {
+      title: 'Seamless Integration',
+      description: 'Easily integrate with existing LMS platforms, with support for multiple question formats and automated grading.',
+      icon: '🔄'
     }
-  ];
-
-  const stats = [
-    { value: '10K+', label: 'Active Job Seekers' },
-    { value: '500+', label: 'Companies Hiring' },
-    { value: '50K+', label: 'Exams Proctored' },
-    { value: '95%', label: 'Satisfaction Rate' }
   ];
 
   return (
     <LandingContainer>
+      <ParticlesContainer ref={particlesContainerRef}>
+        {particles.map(particle => (
+          <Particle
+            key={particle.id}
+            style={{
+              left: particle.x,
+              top: particle.y,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+              background: `radial-gradient(circle at center, ${particle.color} 0%, transparent 70%)`,
+              boxShadow: `0 0 ${particle.size * 2}px ${particle.color}`
+            }}
+            animate={{
+              x: [0, Math.random() * 10 - 5],
+              y: [0, Math.random() * 10 - 5],
+              opacity: [0.4, 0.8, 0.4],
+            }}
+            transition={{
+              duration: 3 + Math.random() * 2,
+              repeat: Infinity,
+              repeatType: "reverse"
+            }}
+          />
+        ))}
+      </ParticlesContainer>
+
       <NavBar>
-        <Logo>ProctorAI</Logo>
+        <Logo>
+          ProctorAI
+        </Logo>
         <NavButtons>
-          <NavButton $type="jobseeker" onClick={() => navigate('/jobseeker-login')} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <LoginButton
+            variant="student"
+            onClick={() => navigate('/student-login')}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
             <FiUser size={18} />
-            Job Seeker
-          </NavButton>
-          <NavButton $type="employer" onClick={() => navigate('/employer-login')} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <FiBriefcase size={18} />
-            Employer
-          </NavButton>
-          <NavButton $type="admin" onClick={() => navigate('/admin-login')} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            Student Login
+          </LoginButton>
+          <LoginButton
+            variant="admin"
+            onClick={() => navigate('/admin-login')}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
             <FiShield size={18} />
-            Admin
-          </NavButton>
+            Admin Login
+          </LoginButton>
         </NavButtons>
       </NavBar>
 
-      <HeroSection>
-        <HeroContent>
-          <Badge
-            initial={{ opacity: 0, y: 20 }}
+      <MainContent>
+        <HeroSection>
+          {/* Robot Animation at the top */}
+          <RobotAnimationContainer
+            initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.8, type: "spring" }}
           >
-            <FiZap size={16} />
-            AI-Powered Hiring Platform
-          </Badge>
+            <Lottie animationData={robotAnimation} loop={true} />
+          </RobotAnimationContainer>
+          
+          {/* Glowing circle behind the robot */}
+          <GlowingCircle
+            animate={{
+              scale: [1, 1.1, 1],
+              opacity: [0.5, 0.8, 0.5],
+            }}
+            transition={{
+              duration: 3,
+              repeat: Infinity,
+              repeatType: "reverse"
+            }}
+          />
 
           <Title
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
           >
-            Transform Your <span> hiring process</span> with AI
+            AI-Powered Exam Proctoring
           </Title>
-
           <Subtitle
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
+            transition={{ duration: 0.5, delay: 0.5 }}
           >
-            Connect employers with top talent through intelligent screening,
-            secure proctored exams, and data-driven hiring decisions.
+            Secure, intelligent, and reliable online examination platform with advanced proctoring capabilities
+            designed to maintain academic integrity in the digital age
           </Subtitle>
 
-          <RoleCards
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
+          <AnimationContainer
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.7 }}
           >
-            {roles.map((role, index) => (
-              <RoleCard
-                key={role.type}
-                onClick={() => navigate(role.path)}
+            <Lottie animationData={proctorAnimation} loop={true} />
+          </AnimationContainer>
+
+          <ScrollIndicator 
+            onClick={scrollToFeatures}
+            animate={{ y: [0, 10, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          >
+            <span>Explore Features</span>
+            <FiChevronDown size={24} />
+          </ScrollIndicator>
+        </HeroSection>
+
+        <FeaturesSection ref={featuresRef}>
+          <SectionTitle>Key Features</SectionTitle>
+          <FeaturesGrid>
+            {features.map((feature, index) => (
+              <FeatureCard
+                key={index}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 * index }}
-                whileHover={{ y: -8 }}
+                transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }}
+                whileHover={{ y: -5 }}
               >
-                <RoleIcon $bg={role.bg} $color={role.color}>
-                  {role.icon}
-                </RoleIcon>
-                <RoleTitle>{role.title}</RoleTitle>
-                <RoleDescription>{role.description}</RoleDescription>
-                <RoleFeatures>
-                  {role.features.map((feature, i) => (
-                    <FeatureItem key={i}>
-                      <FeatureDot />
-                      {feature}
-                    </FeatureItem>
-                  ))}
-                </RoleFeatures>
-              </RoleCard>
+                <FeatureIconContainer>
+                  <span role="img" aria-label={feature.title}>{feature.icon}</span>
+                </FeatureIconContainer>
+                <FeatureTitle>{feature.title}</FeatureTitle>
+                <FeatureDescription>{feature.description}</FeatureDescription>
+              </FeatureCard>
             ))}
-          </RoleCards>
-
-          <CTAButton
-            onClick={() => navigate('/jobseeker-login')}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Get Started Free
-            <FiChevronRight size={20} />
-          </CTAButton>
-        </HeroContent>
-      </HeroSection>
-
-      <StatsSection>
-        <StatsGrid>
-          {stats.map((stat, index) => (
-            <StatItem
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 * index }}
-            >
-              <StatValue>{stat.value}</StatValue>
-              <StatLabel>{stat.label}</StatLabel>
-            </StatItem>
-          ))}
-        </StatsGrid>
-      </StatsSection>
-
-      <FooterSection>
-        <Logo style={{ fontSize: '2rem', marginBottom: '1rem' }}>ProctorAI</Logo>
-        <FooterText>Building the future of hiring with AI-powered proctoring</FooterText>
-      </FooterSection>
+          </FeaturesGrid>
+        </FeaturesSection>
+      </MainContent>
     </LandingContainer>
   );
 };

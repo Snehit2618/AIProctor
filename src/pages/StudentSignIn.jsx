@@ -122,7 +122,7 @@ export default function StudentSignIn() {
     setIsLoading(true);
     
     try {
-      const res = await fetch('http://localhost:5001/api/signup/student', {
+      const res = await fetch('http://localhost:5000/api/signup/student', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

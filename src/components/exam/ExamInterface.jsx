@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-import { FiCamera, FiMonitor, FiCheckCircle, FiAlertCircle, FiClock } from 'react-icons/fi';
+import { FiCamera, FiMonitor, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 import { Navigate, useLocation } from 'react-router-dom';
 
 import Header from '../common/Header';
@@ -113,41 +113,6 @@ const SubmitSection = styled.div`
   justify-content: center;
 `;
 
-const Timer = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background-color: var(--background);
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  color: ${props => props.timeLeft < 300 ? 'var(--danger)' : 'var(--text-primary)'};
-`;
-
-const ExamInfo = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 24px;
-`;
-
-const HeaderContainer = styled.header`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 2rem;
-  background-color: var(--card-bg);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-`;
-
-const Logo = styled.div`
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--primary);
-`;
-
 const ExamInterface = () => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -157,21 +122,7 @@ const ExamInterface = () => {
   const [questions, setQuestions] = useState([]);
   const [score, setScore] = useState(null);
   const location = useLocation();
-  const navigate = useNavigate();
-
-  // Get exam data from location state or sessionStorage
-  const getExamData = () => {
-    const fromState = location.state || {};
-    const storedExam = sessionStorage.getItem('examData');
-    const storedSessionId = sessionStorage.getItem('sessionId');
-
-    return {
-      examData: fromState.exam || (storedExam ? JSON.parse(storedExam) : null),
-      sessionId: fromState.sessionId || storedSessionId
-    };
-  };
-
-  const { exam: examData, sessionId } = getExamData();
+  const { exam: examData, sessionId } = location.state || {};
   const screeningPassed = sessionStorage.getItem('screeningPassed');
 
   if (!screeningPassed) {
@@ -179,7 +130,7 @@ const ExamInterface = () => {
   }
 
   if (!examData || !sessionId) {
-    return <Navigate to="/student-login" replace />;
+    return <Navigate to="/resume-screening" replace />;
   }
 
   const { 
@@ -198,7 +149,7 @@ const ExamInterface = () => {
     if (examData && examData.id) {
       setExam(examData);
       setTimeLeft(examData.duration);
-      fetch(`http://localhost:5001/api/exams/${examData.id}/questions`, {
+      fetch(`http://localhost:5000/api/exams/${examData.id}/questions`, {
         credentials: 'include'
       })
         .then(res => res.json())
@@ -218,7 +169,7 @@ const ExamInterface = () => {
   // Submit exam
   const handleSubmit = async () => {
     try {
-      const res = await fetch(`http://localhost:5001/api/exams/${exam.id}/submit`, {
+      const res = await fetch(`http://localhost:5000/api/exams/${exam.id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -280,13 +231,6 @@ const ExamInterface = () => {
     });
   };
 
-  // Get formatted time string
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   if (examSubmitted) {
     return (
       <ExamContainer>
@@ -322,19 +266,8 @@ const ExamInterface = () => {
 
   return (
     <ExamContainer>
-      <HeaderContainer>
-        <Logo>ProctorAI</Logo>
-        {exam && (
-          <ExamInfo>
-            <h3>{exam.title || "Exam Title"}</h3>
-            <Timer timeLeft={timeLeft}>
-              <FiClock size={18} />
-              {formatTime(timeLeft)}
-            </Timer>
-          </ExamInfo>
-        )}
-      </HeaderContainer>
-
+      <Header examTitle={exam?.title} timeLeft={timeLeft} examMode={true} />
+      
       <ExamContent>
         <QuestionsSection>
           {!isFullScreen && (
